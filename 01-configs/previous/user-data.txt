@@ -1,0 +1,81 @@
+#cloud-config
+autoinstall:
+  version: 1
+  # Языковые настройки и таймзона сервера
+  identity:
+    hostname: baremetal-node01
+    username: serveradmin
+    realname: Server Administrator
+  
+  # Настройки локализации
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  # Переносим наш блок пользователей и SSH-ключ напрямую в инсталлятор
+  ssh:
+    install-server: true
+    allow-pw: false
+    authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHiqF+o+mr07pBix/IgrxyRyQQ0SiisToEywIaJ/02APu my-baremetal-project
+
+disk_setup:
+    /dev/vda:
+        table_type: 'gpt'
+        layout:
+            - 5       # 5% диска отдаем под обычный /boot раздел (код 83)
+            - [95, 8e] # 95% диска отдаем под LVM (код 8e)
+
+lvm:
+    vg_name: vg00
+    volume_groups:
+        vg00:
+            devices: [/dev/vda2]
+    logical_volumes:
+        boot:
+            vg: vg00
+            size: 5%        # ~5% от группы томов
+        root:
+            vg: vg00
+            size: 45%       # Самый большой кусок под систему
+        home:
+            vg: vg00
+            size: 35%       # Под пользовательские данные
+        tmp:
+            vg: vg00
+            size: 15%       # Под изолированные временные файлы
+
+
+fs_setup:
+    - filesystem: ext4
+      device: /dev/vg00/root
+    - filesystem: ext4
+      device: /dev/vg00/boot
+    - filesystem: ext4
+      device: /dev/vg00/home
+    - filesystem: ext4
+      device: /dev/vg00/tmp
+
+mounts:
+    - [/dev/vg00/root, /]
+    - [/dev/vg00/boot, /boot]
+    - [/dev/vg00/home, /home, "ext4", "defaults,nodev,nosuid", "0", "2"]
+    - [/dev/vg00/tmp, /tmp, "ext4", "defaults,nodev,nosuid,noexec", "0", "2"]
+
+runcmd:
+    - ufw default deny incoming
+    - ufw default allow outgoing
+    - ufw allow 22/tcp
+    - ufw --force enable
+  user-data:
+    packages:
+      - fail2ban
+    runcmd:
+      - ufw default deny incoming
+      - ufw default allow outgoing
+      - ufw allow 22/tcp
+      - ufw --force enable
+      - systemctl enable fail2ban
+      - systemctl start fail2ban
+
+

@@ -1,0 +1,88 @@
+#cloud-config
+autoinstall:
+  version: 1
+  identity:
+    hostname: baremetal-demo
+    username: serveradmin
+    password: $6$xyz... # <-- ЗАШИФРОВАННЫЙ ПАРОЛЬ (пока не нужен, т.к. у тебя SSH-ключ)
+  ssh:
+    install-server: true
+    authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHiqF+o+mr07pBix/IgrxyRyQQ0SiisToEywIaJ/02APu my-baremetal-project
+    allow-pw: false
+  
+  storage:
+    layout:
+      name: lvm
+      # ЗДЕСЬ НУЖНО ОПИСАТЬ РАЗМЕТКУ LVM через стандартный синтаксис Autoinstall
+    config:
+      - type: disk
+        id: disk-vda
+        path: /dev/vda
+        wipe: superblock
+        ptable: gpt
+      - type: partition
+        id: partition-boot
+        device: disk-vda
+        size: 2G
+        flag: boot
+      - type: partition
+        id: partition-lvm
+        device: disk-vda
+        size: -1
+      - type: lvm_volgroup
+        id: vg00
+        devices:
+          - partition-lvm
+      - type: lvm_logical
+        id: lv-root
+        volgroup: vg00
+        size: 4G
+      - type: lvm_logical
+        id: lv-home
+        volgroup: vg00
+        size: 2G
+      - type: lvm_logical
+        id: lv-tmp
+        volgroup: vg00
+        size: 1G
+      - type: format
+        id: format-boot
+        device: partition-boot
+        fstype: ext4
+      - type: format
+        id: format-root
+        device: lv-root
+        fstype: ext4
+      - type: format
+        id: format-home
+        device: lv-home
+        fstype: ext4
+      - type: format
+        id: format-tmp
+        device: lv-tmp
+        fstype: ext4
+      - type: mount
+        device: format-boot
+        path: /boot
+      - type: mount
+        device: format-root
+        path: /
+      - type: mount
+        device: format-home
+        path: /home
+      - type: mount
+        device: format-tmp
+        path: /tmp
+  
+  packages:
+    - fail2ban
+    - ufw
+  
+  late-commands:
+    - curtin in-target -- ufw default deny incoming
+    - curtin in-target -- ufw default allow outgoing
+    - curtin in-target -- ufw allow 22/tcp
+    - curtin in-target -- ufw --force enable
+    - curtin in-target -- systemctl enable fail2ban
+    - curtin in-target -- systemctl start fail2ban

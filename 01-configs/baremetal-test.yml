@@ -1,0 +1,129 @@
+#cloud-config
+
+autoinstall:
+  version: 1
+
+  identity:
+    hostname: baremetal-demo
+    username: serveradmin
+    password: "$6$examp$SWh374ne72..."
+
+  ssh:
+    install-server: true
+    allow-pw: false
+    authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIiqF+o+mr07pBiX/IgrxyRyQQ05HiSToFywHaJ/02APu my-baremetal-project
+  
+  storage:
+    config:
+
+      # Физический диск
+      - type: disk
+        id: disk0
+        match:
+          size: largest
+        ptable: gpt
+        wipe: superblock-recursive
+        grub_device: true
+
+      # BIOS GRUB partition
+      - type: partition
+        id: partition-bios
+        device: disk0
+        size: 1M
+        flag: bios_grub
+
+      # /boot
+      - type: partition
+        id: partition-boot
+        device: disk0
+        size: 1G
+
+      - type: format
+        id: format-boot
+        volume: partition-boot
+        fstype: ext4
+        label: boot
+
+      - type: mount
+        id: mount-boot
+        device: format-boot
+        path: /boot
+
+      # Всё оставшееся место отдаём под будущий LUKS
+      - type: partition
+        id: partition-lvm
+        device: disk0
+        size: -1
+
+      # ----------------------------------------------------------------
+      # СЛОЙ ШИФРОВАНИЯ LUKS
+      # ----------------------------------------------------------------
+      - type: dm_crypt
+        id: luks-container
+        volume: partition-lvm
+        dm_name: crypt_lvm
+        # Замените 'SuperSecretPassword123!' на ваш реальный пароль шифрования
+        key: 'SuperSecretPassword123!'
+
+      # Volume Group теперь создается ПОВЕРХ LUKS-контейнера
+      - type: lvm_volgroup
+        id: vg00
+        name: vg00
+        devices:
+          - luks-container
+
+      # /
+      - type: lvm_partition
+        id: lv-root
+        volgroup: vg00
+        name: root
+        size: 4096M
+
+      - type: format
+        id: format-root
+        volume: lv-root
+        fstype: ext4
+        label: root
+
+      - type: mount
+        id: mount-root
+        device: format-root
+        path: /
+
+      # /home
+      - type: lvm_partition
+        id: lv-home
+        volgroup: vg00
+        name: home
+        size: 2048M
+
+      - type: format
+        id: format-home
+        volume: lv-home
+        fstype: ext4
+        label: home
+
+      - type: mount
+        id: mount-home
+        device: format-home
+        path: /home
+
+      # /tmp
+      - type: lvm_partition
+        id: lv-tmp
+        volgroup: vg00
+        name: tmp
+        size: 1024M
+
+      - type: format
+        id: format-tmp
+        volume: lv-tmp
+        fstype: ext4
+        label: tmp
+
+      - type: mount
+        id: mount-tmp
+        device: format-tmp
+        path: /tmp
+        options: nodev,nosuid,noexec
